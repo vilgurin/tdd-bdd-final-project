@@ -89,7 +89,7 @@ def create_products():
     #
     # Uncomment this line of code once you implement READ A PRODUCT
     #
-    # location_url = url_for("get_products", product_id=product.id, _external=True)
+    location_url = url_for("get_products", product_id=product.id, _external=True)
     location_url = "/"  # delete once READ is implemented
     return jsonify(message), status.HTTP_201_CREATED, {"Location": location_url}
 
@@ -101,6 +101,40 @@ def create_products():
 #
 # PLACE YOUR CODE TO LIST ALL PRODUCTS HERE
 #
+@app.route("/products", methods=["GET"])
+def list_products():
+    """Returns a list of Products"""
+    app.logger.info("Request to list Products...")
+
+    # Fetch query parameters
+    name = request.args.get("name")
+    category = request.args.get("category")
+    available = request.args.get("available")
+
+    try:
+        if name:
+            app.logger.info("Finding products by name: %s", name)
+            products = Product.find_by_name(name)
+        elif category:
+            app.logger.info("Finding products by category: %s", category)
+            category_value = getattr(Category, category.upper(), None)
+            if not category_value:
+                abort(status.HTTP_400_BAD_REQUEST, f"Invalid category: {category}")
+            products = Product.find_by_category(category_value)
+        elif available:
+            app.logger.info("Finding products by availability: %s", available)
+            available_value = available.lower() in ["true", "yes", "1"]
+            products = Product.find_by_availability(available_value)
+        else:
+            app.logger.info("Fetching all products")
+            products = Product.all()
+
+        results = [product.serialize() for product in products]
+        app.logger.info("Returning [%s] products", len(results))
+        return jsonify(results), status.HTTP_200_OK
+    except Exception as e:
+        app.logger.error("Error listing products: %s", str(e))
+        abort(status.HTTP_500_INTERNAL_SERVER_ERROR, "An internal error occurred")
 
 ######################################################################
 # R E A D   A   P R O D U C T
@@ -109,6 +143,20 @@ def create_products():
 #
 # PLACE YOUR CODE HERE TO READ A PRODUCT
 #
+@app.route("/products/<int:product_id>", methods=["GET"])
+def get_products(product_id):
+    """
+    Retrieve a single Product
+    This endpoint will return a Product based on its id
+    """
+    app.logger.info("Request to Retrieve a product with id [%s]", product_id)
+    product = Product.find(product_id)
+    if not product:
+        app.logger.error("Product with id [%s] not found", product_id)
+        abort(status.HTTP_404_NOT_FOUND, f"Product with id '{product_id}' was not found.")
+    app.logger.info("Returning product: %s", product.name)
+    return jsonify(product.serialize()), status.HTTP_200_OK
+
 
 ######################################################################
 # U P D A T E   A   P R O D U C T
@@ -117,6 +165,29 @@ def create_products():
 #
 # PLACE YOUR CODE TO UPDATE A PRODUCT HERE
 #
+@app.route("/products/<int:product_id>", methods=["PUT"])
+def update_products(product_id):
+    """
+    Update a Product
+    This endpoint will update a Product based on the body that is posted
+    """
+    app.logger.info("Request to Update a product with id [%s]", product_id)
+    check_content_type("application/json")
+    product = Product.find(product_id)
+    if not product:
+        app.logger.error("Product with id [%s] not found", product_id)
+        abort(status.HTTP_404_NOT_FOUND, f"Product with id '{product_id}' was not found.")
+
+    try:
+        product.deserialize(request.get_json())
+        product.id = product_id
+        product.update()
+        app.logger.info("Product [%s] updated successfully", product_id)
+        return jsonify(product.serialize()), status.HTTP_200_OK
+    except Exception as e:
+        app.logger.error("Error updating product [%s]: %s", product_id, str(e))
+        abort(status.HTTP_400_BAD_REQUEST, "Invalid data for update")
+
 
 ######################################################################
 # D E L E T E   A   P R O D U C T
@@ -126,3 +197,22 @@ def create_products():
 #
 # PLACE YOUR CODE TO DELETE A PRODUCT HERE
 #
+@app.route("/products/<int:product_id>", methods=["DELETE"])
+def delete_products(product_id):
+    """
+    Delete a Product
+    This endpoint will delete a Product based on the id specified in the path
+    """
+    app.logger.info("Request to Delete a product with id [%s]", product_id)
+    product = Product.find(product_id)
+    if product:
+        try:
+            product.delete()
+            app.logger.info("Product [%s] deleted successfully", product_id)
+        except Exception as e:
+            app.logger.error("Error deleting product [%s]: %s", product_id, str(e))
+            abort(status.HTTP_500_INTERNAL_SERVER_ERROR, "An internal error occurred while deleting the product")
+    else:
+        app.logger.warning("Product with id [%s] not found for deletion", product_id)
+
+    return "", status.HTTP_204_NO_CONTENT
